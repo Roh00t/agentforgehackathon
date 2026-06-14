@@ -39,6 +39,7 @@ from backend.db import get_conn, init_db, migrate_db
 from backend.scraper import get_regulations
 from backend.extractor import extract_text, extract_context_text
 from backend.redaction import redact_documents
+from backend.entity_map import build_entity_map, apply_entity_map
 from backend.analyzer import analyze_combined
 from src.terminal3_signer import sign_report_hash
 from backend.security import (
@@ -169,10 +170,30 @@ async def analyze(
         else:
             context_errors.append({"filename": f.filename, "error": result.get("error", "No text extracted")})
 
-    # ── 3b. Redact PII in EVERY doc BEFORE it reaches the LLM (Addition A).
-    #        Daytona sandbox per doc, concurrent, with an in-process regex
-    #        fallback so the LLM never receives un-redacted text. The analyzer
-    #        then wraps the already-redacted text (redact -> wrap -> analyze). ─
+    # ── 3b. CROSS-DOCUMENT ENTITY MAP (NER + regex) over ALL extracted text
+    #        COMBINED, applied BEFORE the regex sweep and the LLM. The same real
+    #        entity gets the SAME placeholder in every file ([PERSON_1], [ORG_1],
+    #        [NRIC_1] ...), which is what lets the analyzer catch cross-document
+    #        contradictions. The map holds real PII -> placeholder; it is returned
+    #        to the browser for client-side de-redaction ONLY, never persisted and
+    #        never sent to the LLM/Bright Data (guardrail #2/#3). ────────────────
+    entity_map = build_entity_map(
+        [d["text"] for d in contract_docs] + [d["text"] for d in context_docs]
+    )
+    for d in contract_docs:
+        d["text"] = apply_entity_map(d["text"], entity_map)
+    for d in context_docs:
+        d["text"] = apply_entity_map(d["text"], entity_map)
+
+    # Entity-type COUNTS for the UI banner (counts only — never the values).
+    entity_counts: dict = {}
+    for placeholder in entity_map.values():
+        etype = placeholder.strip("[]").rsplit("_", 1)[0]
+        entity_counts[etype] = entity_counts.get(etype, 0) + 1
+
+    # ── 3c. Second sweep: Daytona/local regex redactor as a backstop for any
+    #        NRIC/email/phone/address the entity map missed. The LLM still never
+    #        receives un-redacted text (redact -> wrap -> analyze). ──────────────
     contract_docs = redact_documents(contract_docs)
     context_docs = redact_documents(context_docs)
     redaction_reports = [
@@ -254,6 +275,8 @@ async def analyze(
         "extraction_errors": contract_errors + context_errors,
         "duplicate_files_excluded": duplicate_warnings,
         "redaction_reports": redaction_reports,
+        "entity_map": entity_map,          # {real -> placeholder}; browser-only de-redaction
+        "entity_counts": entity_counts,    # {type -> count}; for the banner (no values)
         "attestation": attestation,
         "regulation_source": reg_data.get("source"),
         "analysis": analysis,

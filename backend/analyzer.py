@@ -182,16 +182,21 @@ Both must be present even if context_docs is empty.
   }
 }
 
-MOM_REPORT_DRAFT — REDACTION & PLACEHOLDER RULE (read carefully):
-The uploaded text has been PII-redacted before reaching you. You will see tokens
-like [REDACTED_NRIC], [REDACTED_EMAIL], [REDACTED_PHONE], [REDACTED_ADDRESS] where
-personal data used to be. In mom_report_draft, NEVER copy a [REDACTED_*] token into
-the letter and NEVER invent a value to replace it. Instead use a bracketed fill-in
-placeholder the user completes themselves: [YOUR NAME], [YOUR NRIC], [EMPLOYER NAME],
-[YOUR ADDRESS], [YOUR EMAIL], [YOUR PHONE], [DATE]. The same rule applies to any
-fact (name, date, figure, reference number) that is NOT present in the provided
-text: use a bracketed placeholder rather than fabricating it. Facts that ARE present
-in the text (e.g. clause wording, bond terms, salary figures) should be used directly.
+ANONYMISATION — HOW TO HANDLE PLACEHOLDER TOKENS (read carefully):
+The uploaded text has been anonymised before reaching you. Real identities appear as
+numbered tokens: [PERSON_1], [ORG_1], [NRIC_1], [EMAIL_1], [PHONE_1], [ADDRESS_1], etc.
+The SAME token always denotes the SAME real entity across ALL documents — rely on this
+to detect cross-document contradictions (e.g. "[PERSON_1] signed the form but [PERSON_1]'s
+LOA says otherwise"). In ALL output, INCLUDING mom_report_draft, PRESERVE these tokens
+EXACTLY as written wherever you refer to that entity — they are substituted back to the
+real names locally in the user's browser. Do NOT rename, renumber, merge, or guess the
+real value behind any token.
+You may ALSO see a few [REDACTED_TYPE] tokens (e.g. [REDACTED_PHONE]) left by the regex
+backstop — treat those as generic fill-ins the user completes, like [YOUR PHONE].
+For any fact NOT present in the documents at all (a date, an address, a reference number),
+use a bracketed fill-in such as [DATE] / [YOUR ADDRESS] rather than inventing it. Never
+fabricate a real name, NRIC, date, or figure that is not in the provided text. Facts that
+ARE present (clause wording, bond terms, salary figures) should be used directly.
 
 BREVITY: keep fields tight (executive_summary 2-3 sentences; at most 6 red_flags;
 mom_report_draft.body 120-180 words). Be specific and concise; do not pad."""

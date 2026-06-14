@@ -784,14 +784,19 @@ async function loadSessions() {
       'INSUFFICIENT_INFORMATION': { text: 'No verdict', color: '#666' },
     };
     list.innerHTML = sessions.map(s => {
-      const files = (s.filenames || []).join(', ') || 'Unknown files';
+      // Human-readable title: first file (minus .pdf) + verdict, e.g.
+      // "synthetic_contract — EMPLOYER_AT_FAULT"; "<name> — pending" if no verdict.
+      const first = (s.filenames || [])[0] || 'contract';
+      const base = String(first).replace(/\.pdf$/i, '');
+      const hasVerdict = s.verdict && s.verdict !== 'INSUFFICIENT_INFORMATION';
+      const title = `${base} — ${hasVerdict ? s.verdict : 'pending'}`;
       const date = new Date(s.created_at).toLocaleString('en-SG', {
         month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'
       });
       const vl = verdictLabel[s.verdict] || verdictLabel['INSUFFICIENT_INFORMATION'];
       return `<div class="session-item" onclick="loadSession('${s.id}')">
         <div class="session-date">${date}</div>
-        <div class="session-files">${esc(files)}</div>
+        <div class="session-files">${esc(title)}</div>
         <span style="font-size:10px;font-weight:700;color:${vl.color}">⚖ ${vl.text}</span>
       </div>`;
     }).join('');
@@ -947,7 +952,8 @@ async function runAnalysis() {
     hideLoading();
     clearFiles();
     renderAnalysis({ analysis: data.analysis, judgment: data.judgment,
-      redaction_reports: data.redaction_reports, attestation: data.attestation },
+      redaction_reports: data.redaction_reports, attestation: data.attestation,
+      entity_map: data.entity_map, entity_counts: data.entity_counts },
       contractNames, contextNames);
     await loadSessions();
   } catch(e) {
@@ -1069,6 +1075,11 @@ function renderAnalysis(data, contractFilenames, contextFilenames) {
   const judgment = (data && data.judgment) || null;
   const redactionReports = (data && data.redaction_reports) || [];
   const attestation = (data && data.attestation) || null;
+  const entityMap = (data && data.entity_map) || {};           // {real -> placeholder}
+  const entityCounts = (data && data.entity_counts) || {};     // {type -> count}
+  // Reverse map for client-side de-redaction: {placeholder -> real}. Built and
+  // used ONLY in the browser — real names are never sent back to the server.
+  const deRedact = Object.fromEntries(Object.entries(entityMap).map(([real, ph]) => [ph, real]));
   document.getElementById('emptyState').style.display = 'none';
   const area = document.getElementById('analysisArea');
   area.style.display = '';
@@ -1098,35 +1109,42 @@ function renderAnalysis(data, contractFilenames, contextFilenames) {
     </div>
   </div>`;
 
-  // ── 1b. PII REDACTION (Addition A) — shown before the analysis content ──
-  if (redactionReports.length) {
-    const totalRedacted = redactionReports.reduce((n, r) => n + (r.total_redactions || 0), 0);
-    const engines = [...new Set(redactionReports.map(r => r.engine))];
+  // ── 1b. PRIVACY / REDACTION BANNER (Task 2.5) — NER + regex entity map ──
+  {
+    const TYPE_LABEL = { PERSON:'PERSON', ORG:'ORG', NRIC:'NRIC', EMAIL:'EMAIL',
+                         PHONE:'PHONE', ADDRESS:'ADDRESS' };
+    const order = ['PERSON','ORG','NRIC','EMAIL','PHONE','ADDRESS'];
+    const countEntries = order
+      .filter(t => entityCounts[t])
+      .map(t => `${TYPE_LABEL[t]}: ${entityCounts[t]}`)
+      // include any other types the map produced, just in case
+      .concat(Object.keys(entityCounts).filter(t => !order.includes(t)).map(t => `${t}: ${entityCounts[t]}`));
+    const engines = [...new Set(redactionReports.map(r => r.engine))].filter(Boolean);
     html += `<div class="msg">
-      <div class="section-h">PII Redaction — applied before any text reached the AI</div>
       <div class="severity-banner" style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.28)">
         <div class="severity-text">
-          <strong>${totalRedacted}</strong> personal-data item(s) redacted across
-          ${redactionReports.length} file(s) before any text was sent to the AI model
-          (engine: ${esc(engines.join(', '))}).
-          <div style="font-size:11px;color:var(--text-3);margin-top:6px">
-            Automated redaction removes NRIC numbers, emails, phone numbers, and common
-            address patterns. It does NOT catch names in prose, signatures, or company names.
+          <strong>Privacy Protection Active.</strong> Before analysis, ClauseGuard replaced
+          names, organisations, ID numbers, emails, phone numbers, and addresses with
+          anonymous placeholders. The AI only ever saw these placeholders — never your real
+          details. Real names shown in the MOM letter were filled in locally in your browser
+          and were never transmitted.
+          <div style="font-size:11px;color:var(--text-3);margin-top:8px">
+            Note: Automated redaction is best-effort. It may not catch all identifying details
+            (e.g. handwritten names, indirect references).${engines.length ? ` · redaction engine: ${esc(engines.join(', '))}` : ''}
           </div>
         </div>
       </div>
-      <div class="doc-cards" style="margin-top:8px">
-        ${redactionReports.map(r => `<div class="doc-card">
-          <div class="doc-card-header">
-            <div class="doc-name">${esc(r.filename)}</div>
-            <span class="doc-signed signed-partial">${r.total_redactions || 0} redacted · ${esc(r.engine)}</span>
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;font-size:12px;color:var(--text-2)">Redaction report — entity counts (no values)</summary>
+        <div class="doc-cards" style="margin-top:8px">
+          <div class="doc-card">
+            <div style="font-size:12px;color:var(--text)">${
+              countEntries.length ? countEntries.map(esc).join(' · ')
+                                   : 'No entities were detected (does not guarantee none present).'
+            }</div>
           </div>
-          <div style="font-size:11px;color:var(--text-2)">${
-            Object.entries(r.redaction_report || {}).map(([k, v]) => `${esc(k)}: ${v}`).join(' · ')
-            || 'no PII patterns matched (does not mean none present)'
-          }</div>
-        </div>`).join('')}
-      </div>
+        </div>
+      </details>
     </div>`;
   }
 
@@ -1242,7 +1260,14 @@ function renderAnalysis(data, contractFilenames, contextFilenames) {
   // ── 7. MOM DRAFT ─────────────────────────────────────────────
   if (a.mom_report_draft) {
     const draft = a.mom_report_draft;
-    const fullDraft = `To: ${draft.to||'MOM Contact Centre'}\nSubject: ${draft.subject||''}\n\n${draft.body||''}`;
+    // De-redact: swap [PERSON_1]/[ORG_1]/... back to real values, IN THE BROWSER
+    // ONLY. split/join does literal (regex-safe) replacement of each placeholder.
+    const subst = (s) => Object.entries(deRedact).reduce(
+      (acc, [ph, real]) => acc.split(ph).join(real), s || '');
+    const toV = subst(draft.to || 'MOM Contact Centre / TADM');
+    const subjV = subst(draft.subject || '');
+    const bodyV = subst(draft.body || '');
+    const fullDraft = `To: ${toV}\nSubject: ${subjV}\n\n${bodyV}`;
     html += `<div class="msg">
       <div class="section-h">MOM / TADM Report Draft</div>
       <div class="draft-box">
@@ -1250,12 +1275,13 @@ function renderAnalysis(data, contractFilenames, contextFilenames) {
           <span class="draft-title">Draft — Edit before sending</span>
           <button class="copy-btn" onclick="copyDraft(this,'${encodeURIComponent(fullDraft)}')">Copy Draft</button>
         </div>
-        <div class="draft-to">To: ${esc(draft.to || 'MOM Contact Centre / TADM')}</div>
-        <div class="draft-subject">Subject: ${esc(draft.subject)}</div>
-        <div class="draft-body">${esc(draft.body)}</div>
+        <div class="draft-to">To: ${esc(toV)}</div>
+        <div class="draft-subject">Subject: ${esc(subjV)}</div>
+        <div class="draft-body">${esc(bodyV)}</div>
         <div style="font-size:11px;color:var(--text-3);margin-top:10px;border-top:1px solid var(--border-2);padding-top:8px">
-          Fill in the bracketed fields (e.g. [YOUR NAME], [YOUR NRIC]) with your real
-          details before sending — these were redacted during analysis for privacy.
+          Real names shown here were filled in locally in your browser. The AI only ever
+          saw anonymized placeholders — these names were never transmitted. Any remaining
+          [BRACKETED] fields are facts not in your documents; fill them in before sending.
         </div>
       </div>
     </div>`;

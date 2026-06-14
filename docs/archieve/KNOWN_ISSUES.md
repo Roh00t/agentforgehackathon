@@ -116,3 +116,31 @@ email admission.
   ASCII before rendering. No change to app behaviour.
 - **`response_format=json_object`** is NOT used — TokenRouter/Kimi returned empty
   content with it. Robust fence-stripping + 8192 max_tokens is used instead.
+
+## TASK 2 — NER cross-document entity map (2026-06-14)
+
+Added `backend/entity_map.py` (regex + spaCy `en_core_web_sm` PERSON/ORG), built
+once over ALL session text combined so each entity gets ONE consistent placeholder
+across files. Applied before the existing Daytona/local regex sweep; the entity map
+is returned to the browser for client-side MOM-letter de-redaction and is **NOT
+persisted** (guardrail #3). `.eml` now extracts the parsed body (stdlib `email`),
+not raw MIME. Verified: NRIC/email/phone/address/person-name redacted before the LLM,
+cross-document consistency holds, browser de-redaction leaves zero placeholder tokens.
+
+### P1 — `en_core_web_sm` is a small, imperfect NER model
+- **Under-redaction (names/orgs in prose):** company names like "Acme Staffing" are
+  NOT caught — spaCy misses them. This is the documented best-effort limit (disclosed
+  in the UI banner). A heavier NER (`presidio` or a larger spaCy model) or a
+  `Pte Ltd|Ltd|Inc` org-suffix regex would close most of it — deferred (scope/ask).
+- **Over-redaction / noisy spans:** spaCy mis-tagged generic words/headings
+  ("Company", "Employee Particulars", colon/newline-crossing spans). Mitigated by a
+  noise filter in `entity_map.py` (`_is_noise_entity`: drops <2/>40-char spans, spans
+  with newlines/colons, and a small stop-word set). Residual mislabels remain
+  (e.g. job title "L1 Support" tagged ORG) — harmless: de-redaction restores them and
+  privacy is unaffected (over-redaction fails safe).
+- **No session-reload de-redaction:** entity map isn't persisted (guardrail #3), so
+  reloading an old session shows placeholders, not real names — same class as the
+  already-accepted "attestation not persisted" P1.
+- **Latency:** spaCy NER on combined text adds ~1s; analyze stays ~50–60s/doc (LLM-bound).
+- **No chat textbar exists** in the app, so Task 2.2's "chat input redaction" sub-item
+  had no target and was intentionally skipped (not built — would be new scope).

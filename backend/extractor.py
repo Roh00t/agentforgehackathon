@@ -65,7 +65,7 @@ def extract_context_text(file_bytes: bytes, filename: str) -> dict:
                     "text": "", "pages": 0, "chars": 0}
         return extract_text(file_bytes, filename)
 
-    if ext in ("txt", "eml"):
+    if ext == "txt":
         try:
             text = file_bytes.decode("utf-8", errors="replace").strip()
         except Exception as e:
@@ -75,6 +75,42 @@ def extract_context_text(file_bytes: bytes, filename: str) -> dict:
             return {"filename": filename, "success": False,
                     "error": "File appears empty.", "text": "", "pages": 0, "chars": 0}
         # Higher char budget than PDFs — no extraction overhead.
+        return {"filename": filename, "success": True,
+                "text": text[:12000], "pages": 1, "chars": len(text)}
+
+    if ext == "eml":
+        # Parse the email and extract the BODY only (stdlib email, no deps).
+        # Useful headers (From/To/Subject/Date) are kept as context — they often
+        # carry the dispute's who/when. Any PII in them is entity-mapped +
+        # regex-redacted downstream before the analyzer ever sees it.
+        try:
+            import email
+            from email import policy
+            import re as _re
+
+            msg = email.message_from_bytes(file_bytes, policy=policy.default)
+            part = msg.get_body(preferencelist=("plain", "html"))
+            if part is not None:
+                body = part.get_content()
+                if part.get_content_type() == "text/html":
+                    body = _re.sub(r"<[^>]+>", " ", body)          # strip tags
+                    body = _re.sub(r"[ \t]*\n[ \t]*", "\n", body)  # tidy whitespace
+            elif not msg.is_multipart():
+                body = msg.get_content()
+            else:
+                body = ""
+
+            headers = "\n".join(
+                f"{h}: {msg.get(h)}" for h in ("From", "To", "Subject", "Date") if msg.get(h)
+            )
+            text = ((headers + "\n\n" + (body or "")).strip()) if headers else (body or "").strip()
+        except Exception as e:
+            return {"filename": filename, "success": False,
+                    "error": f"Could not parse .eml: {e}", "text": "", "pages": 0, "chars": 0}
+
+        if len(text) < 10:
+            return {"filename": filename, "success": False,
+                    "error": "Email body appears empty.", "text": "", "pages": 0, "chars": 0}
         return {"filename": filename, "success": True,
                 "text": text[:12000], "pages": 1, "chars": len(text)}
 

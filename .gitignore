@@ -8,3 +8,5 @@ sample_data/*.pdf
 data/*.db
 venv/
 .venv/
+test/
+tests/
