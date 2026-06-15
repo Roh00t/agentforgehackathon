@@ -729,6 +729,24 @@ body{
       </div>
 
     </div>
+
+    <!-- Phase 3: chat context — supplementary narrative. Runs through the SAME
+         entity-map redaction pipeline as documents. Scoped to THIS analysis only,
+         not a general legal chatbot (guardrail #11). -->
+    <div id="chat-context-section" style="border-top:1px solid var(--border);padding:12px 0 2px">
+      <label for="chat-input" style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-2);display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        Additional context
+        <span style="font-weight:600;letter-spacing:0;text-transform:none;font-size:10px;color:var(--text-3);border:1px solid var(--border-2);border-radius:10px;padding:1px 7px">optional</span>
+      </label>
+      <textarea id="chat-input" maxlength="2000" rows="3"
+        placeholder="Add any relevant background — what was said in meetings, verbal promises made, dates you were given. This context is analyzed alongside your documents."
+        style="width:100%;resize:vertical;background:var(--surface);color:var(--text);border:1px solid var(--border-2);border-radius:var(--radius-sm);padding:9px 11px;font:13px var(--font);line-height:1.5"></textarea>
+      <div class="chat-meta" style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;font-size:11px;color:var(--text-3)">
+        <span id="chat-char-count">0 / 2000</span>
+        <span class="chat-scope-note">For this analysis only · Not a legal advisor</span>
+      </div>
+    </div>
+
     <div class="upload-actions">
       <button class="analyze-btn" id="analyzeBtn" onclick="runAnalysis()" disabled>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -766,6 +784,16 @@ async function init() {
   await loadSessions();
   setupDragDrop();
   setupClearData();
+  setupChatCounter();
+}
+
+// Phase 3: live char counter for the chat context box (2000-char cap).
+function setupChatCounter() {
+  const input = document.getElementById('chat-input');
+  if (!input) return;
+  input.addEventListener('input', function () {
+    document.getElementById('chat-char-count').textContent = `${this.value.length} / 2000`;
+  });
 }
 
 function showBanner(msg) {
@@ -881,6 +909,13 @@ async function loadSession(id) {
       session.contract_filenames || [],
       session.context_filenames || [],
     );
+    // Phase 3: repopulate the chat box with this session's saved context.
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+      chatInput.value = session.chat_context || '';
+      document.getElementById('chat-char-count').textContent =
+        `${(session.chat_context || '').length} / 2000`;
+    }
   } catch(e) {
     hideLoading();
     showToast('Failed to load session from browser storage.');
@@ -1002,6 +1037,9 @@ async function runAnalysis() {
     const form = new FormData();
     for (const f of contractFiles) form.append('contract_files', f);
     for (const f of contextFiles)  form.append('context_files', f);
+    // Phase 3: include chat context (redacted server-side via the same entity map).
+    const chatText = (document.getElementById('chat-input')?.value || '').trim();
+    if (chatText) form.append('chat_context', chatText);
 
     const r = await fetch('/api/analyze', { method: 'POST', body: form });
     clearInterval(stepTimer);
@@ -1038,6 +1076,7 @@ async function runAnalysis() {
         analysis: data,                       // full API response (rebuilt on reload)
         entity_map: data.entity_map || null,  // {real -> placeholder}; for de-redaction
         verdict,
+        chat_context: chatText,               // Phase 3: raw chat — stays local (IndexedDB only)
       });
     } catch (e) {
       // Step 7: surface storage problems clearly. The analysis already rendered

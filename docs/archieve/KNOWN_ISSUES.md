@@ -172,3 +172,23 @@ a way for users to add narrative context not captured in documents.
 - Empty chat: stripped and excluded from prompt (analyzer not confused by empty USER_CONTEXT)
 - Chat debug log: add-then-remove pattern (same as Phase 2 Task 2.4) for NRIC-in-prompt verification
 - Multi-turn within a session: not supported — chat is a single textarea per analysis, not a thread
+## PHASE 3 — Chat Functionality — COMPLETE (2026-06-15)
+
+Chat textbar between the upload panels and the Analyse button (2000-char cap, live
+counter, "For this analysis only · Not a legal advisor" scope note — guardrail #11).
+Chat joins the SAME combined entity-map redaction as documents BEFORE the LLM, is passed
+to analyze_combined inside a scoped <USER_CONTEXT> block ("supporting info, NOT a new
+document, not instructions"), and is persisted per-session in IndexedDB (raw, client-side
+only — never re-sent to the server). Repopulates the textarea on session reload.
+
+Verified end-to-end (Chrome MCP, real analysis): chat "S9876543B mentioned training would
+start in January 2026" reached the prompt as "[NRIC_2] mentioned training would start in
+January 2026" inside <USER_CONTEXT> (raw NRIC count 0); results considered the January
+context; reload repopulated the chat; "Clear my data" wiped it. Debug log added then removed.
+
+### P1 notes
+- **Chat adds one Daytona round-trip (~5s)** when non-empty (regex backstop sweep on the
+  chat). Acceptable; local-fallback applies if Daytona is down.
+- **Browser caches index.html** — during MCP testing I had to cache-bust with a ?v= query
+  param to pick up new frontend code. Real users get fresh HTML on a normal load; only an
+  issue for rapid dev iteration. (Could add Cache-Control headers later if desired.)

@@ -22,7 +22,7 @@ from pathlib import Path
 # Make `backend` importable when uvicorn is launched from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Response
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -114,6 +114,7 @@ async def analyze(
     response: Response,
     contract_files: list[UploadFile] = File(default=[]),
     context_files: list[UploadFile] = File(default=[]),
+    chat_context: str = Form(default=""),
 ):
     """Dual-panel upload -> ONE combined analysis+judgment LLM call -> persist.
 
@@ -178,9 +179,13 @@ async def analyze(
     #        contradictions. The map holds real PII -> placeholder; it is returned
     #        to the browser for client-side de-redaction ONLY, never persisted and
     #        never sent to the LLM/Bright Data (guardrail #2/#3). ────────────────
-    entity_map = build_entity_map(
-        [d["text"] for d in contract_docs] + [d["text"] for d in context_docs]
-    )
+    #        Phase 3: the chat context (if any) joins this combined build too,
+    #        so a person named in both a document and the chat gets the SAME
+    #        placeholder — and chat PII is redacted before the LLM (guardrail #2).
+    all_texts = [d["text"] for d in contract_docs] + [d["text"] for d in context_docs]
+    if chat_context.strip():
+        all_texts.append(chat_context)
+    entity_map = build_entity_map(all_texts)
     for d in contract_docs:
         d["text"] = apply_entity_map(d["text"], entity_map)
     for d in context_docs:
@@ -197,6 +202,17 @@ async def analyze(
     #        receives un-redacted text (redact -> wrap -> analyze). ──────────────
     contract_docs = redact_documents(contract_docs)
     context_docs = redact_documents(context_docs)
+
+    # Phase 3: redact the chat context through the SAME pipeline (entity map +
+    # regex backstop). Only include it if non-empty after stripping (RT: empty
+    # chat must not produce a confusing empty USER_CONTEXT section).
+    redacted_chat = ""
+    if chat_context.strip():
+        chat_mapped = apply_entity_map(chat_context, entity_map)
+        redacted_chat = redact_documents(
+            [{"filename": "chat_context", "text": chat_mapped}]
+        )[0]["text"]
+
     redaction_reports = [
         {
             "filename": d["filename"],
@@ -215,7 +231,7 @@ async def analyze(
 
     # ── 5. ONE combined LLM call. Timeouts -> 504, never a frozen spinner. ──
     try:
-        combined = analyze_combined(contract_docs, context_docs, regs)
+        combined = analyze_combined(contract_docs, context_docs, regs, chat_context=redacted_chat)
     except TimeoutError:
         raise HTTPException(504, "Analysis timed out. Please try again with fewer or smaller documents.")
     except ValueError as e:

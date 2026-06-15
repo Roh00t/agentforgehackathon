@@ -82,8 +82,11 @@ Disclosed in UI banner.
 - ✅ Phase 2 (Browser-Persisted Sessions): COMPLETE — Option A
   implemented. Server stateless. IndexedDB via idb@8 CDN. "Clear my
   data" button. Shared-device notice. 34/34 tests pass.
-- 🔄 Phase 3 (Chat Functionality): IN PROGRESS — see current
-  Claude Code Prompt page in Notion.
+- ✅ Phase 3 (Chat Functionality): COMPLETE — chat textbar (2000-char
+  cap, scope-noted) between panels and Analyse button. Chat joins the
+  combined entity-map redaction, passed to analyzer in a scoped
+  `<USER_CONTEXT>` block, persisted per-session in IndexedDB (raw,
+  client-side only), repopulated on reload. Verified end-to-end.
 
 ## Active Roadmap Direction
 - **Phase 3 (current):** Chat textbar between upload panels and
