@@ -1,17 +1,25 @@
+# Environment files
 .env
 .env.*
-.claude/
-.posthog-setup-report.md
-.CODEBASE_GUIDE.md
-.STRESS_TEST.md
-.CLAUDE.md
 !.env.example
+
+# AI / Assistant folders
+.claude/
+
+# Documentation
+*.md
+!README.md
+# Python cache and environments
 __pycache__/
 *.pyc
-.DS_Store
-sample_data/*.pdf
-data/*.db
 venv/
 .venv/
+
+# OS files
+.DS_Store
+
+# Data and testing
+sample_data/*.pdf
+data/*.db
 test/
 tests/
