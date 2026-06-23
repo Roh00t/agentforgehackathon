@@ -117,9 +117,19 @@ async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 
 app.add_middleware(SlowAPIMiddleware)
+
+# CORS — env-var-driven (ALLOWED_ORIGINS, comma-separated). Defaults to "*" for
+# local dev convenience; production sets it to the real Render URL in the
+# dashboard. This is the guardrail-#? CORS fix for the Render deploy.
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
+if _raw_origins.strip() == "*":
+    _allowed_origins = ["*"]
+else:
+    _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

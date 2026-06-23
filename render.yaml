@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: clauseguard
+    env: python
+    region: singapore  # Closest to target users + Supabase region
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.0
+      - key: CLAUSEGUARD_DISABLE_ANALYTICS
+        value: "0"
+      - key: ALLOWED_ORIGINS
+        sync: false  # Set manually in dashboard to the Render URL after first deploy
+      - key: TOKENROUTER_API_KEY
+        sync: false
+      - key: DAYTONA_API_KEY
+        sync: false
+      - key: TERMINAL3_API_KEY
+        sync: false
+      - key: TERMINAL3_DID
+        sync: false
+      - key: BRIGHTDATA_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_JWKS_URL
+        sync: false
+      - key: POSTHOG_PROJECT_TOKEN
+        sync: false
+      - key: POSTHOG_HOST
+        sync: false
